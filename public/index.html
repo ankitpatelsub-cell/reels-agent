@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Cache-Control" content="no-store" />
+<title>Shree Auto — Reels Studio (AI Video)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Noto+Sans+Devanagari:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0f1f33;--blue:#1f5fae;--bg:#f4f7fb;--card:#fff;--muted:#5b6b7d;--line:#e6ecf3;--grad:linear-gradient(135deg,#0f1f33,#1f5fae)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter','Noto Sans Devanagari',system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+header{background:var(--grad);color:#fff;padding:18px 0}
+.wrap{max-width:880px;margin:0 auto;padding:0 18px}
+.nav{display:flex;justify-content:space-between;align-items:center}
+.brand{font-weight:900;font-size:19px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:16px}
+h3{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px}
+textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:14px;font-family:inherit;margin-top:6px}
+.row{display:flex;gap:10px}
+.go{background:var(--blue);color:#fff;font-weight:800;border:none;border-radius:10px;padding:12px 18px;font-size:15px;cursor:pointer;margin-top:12px}
+.go:hover{background:#174fa0}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#eef4fd;color:var(--blue)}
+.story{font-size:13.5px;white-space:pre-wrap;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:8px}
+video{width:100%;border-radius:12px;margin-top:10px;background:#000}
+a.back{color:#fff;text-decoration:none;background:rgba(255,255,255,.16);padding:7px 13px;border-radius:9px;font-size:13px}
+</style>
+</head>
+<body>
+<header><div class="wrap nav"><div class="brand">🎬 Reels Studio — AI Video</div><a class="back" href="http://129.121.122.53:8080/">← Portal</a></div></header>
+<div class="wrap">
+  <div class="card">
+    <h3>Create a marketing reel</h3>
+    <textarea id="brief" rows="3" placeholder="e.g. New Maruti Swift 2024 in stock, ₹6.49L, exchange bonus"></textarea>
+    <div class="row">
+      <select id="lang" style="width:140px"><option value="en">English</option><option value="hi">हिंदी</option></select>
+      <input id="imgfile" type="file" accept="image/*" style="margin-top:6px" onchange="toB64(this)">
+    </div>
+    <div class="row" style="margin-top:10px;align-items:center">
+      <span style="font-size:13px;color:var(--muted)">…or auto-reel from stock:</span>
+      <input id="carid" placeholder="car id (e.g. 1)" style="width:120px">
+      <button class="go" style="margin-top:0;padding:10px 14px" onclick="fromCar()">Use car #</button>
+    </div>
+    <button class="go" onclick="gen()">Generate reel ▶</button>
+    <div id="out"></div>
+  </div>
+</div>
+<script>
+let IMG='';
+function toB64(el){const f=el.files[0];if(!f)return;const r=new FileReader();r.onload=()=>IMG=r.result;r.readAsDataURL(f);}
+async function gen(){
+  const b={brief:brief.value,lang:lang.value,image:IMG||undefined};
+  if(!b.brief&&!b.image)return alert('add a brief or image');
+  const r=await fetch('/api/reel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+  show(await r.json());
+}
+async function fromCar(){const r=await fetch('/api/reel-from-car',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({carId:carid.value,lang:lang.value})});show(await r.json());}
+function show(d){
+  if(d.error)return out.innerHTML='<p style="color:#c0392b">'+d.error+'</p>';
+  let h=`<div class="story"><b>🎯 Hook:</b> ${d.script.hook}\n\n<b>📜 Storyboard:</b>\n${d.script.storyboard.join('\n')}\n\n<b>🗣 Voiceover:</b> ${d.script.voiceover}\n\n<b>🤖 Video prompt:</b> ${d.script.videoPrompt}\n\n<b>📣 CTA:</b> ${d.script.cta}</div>`;
+  if(d.video)h+=`<video src="${d.video}" controls autoplay loop muted></video>`;
+  h+=`<p style="margin-top:8px"><span class="badge">${d.mode}</span> ${d.note||''}</p>`;
+  out.innerHTML=h;
+}
+</script>
+</body>
+</html>
