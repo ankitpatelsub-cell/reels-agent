@@ -26,7 +26,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/reel') {
     const b = await body();
     if (!b.brief && !b.subject && !b.image) return send(res, 400, { error: 'need brief / subject / image' });
-    return send(res, 200, buildReel({ brief: b.brief, subject: b.subject, lang: b.lang || 'en', imageB64: b.image }));
+    return send(res, 200, await buildReel({ brief: b.brief, subject: b.subject, lang: b.lang || 'en', imageB64: b.image }));
   }
   if (req.method === 'POST' && url.pathname === '/api/reel-from-car') {
     const b = await body();
@@ -41,7 +41,7 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, r);
   }
   if (req.method === 'GET' && url.pathname === '/api/health') {
-    return send(res, 200, { ok: true, mode: process.env.VIDEO_API_KEY ? 'provider' : 'preview', video: process.env.VIDEO_API_KEY ? 'ready' : 'needs key' });
+    return send(res, 200, { ok: true, mode: process.env.VIDEO_API_KEY ? 'provider' : 'preview', video: process.env.VIDEO_API_KEY ? 'ready' : 'needs key', script: process.env.XAI_API_KEY ? 'xai-grok' : 'template' });
   }
 
   // Static: reels files

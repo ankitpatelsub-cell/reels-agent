@@ -3,9 +3,9 @@ const { reelScript } = require('./script');
 const video = require('./video');
 const http = require('http');
 
-function buildReel({ brief, subject, lang = 'en', imageB64 }) {
+async function buildReel({ brief, subject, lang = 'en', imageB64 }) {
   const id = Date.now().toString().slice(-6);
-  const script = reelScript({ brief, subject, lang, imageDesc: imageB64 ? 'uploaded photo' : '' });
+  const script = await reelScript({ brief, subject, lang, imageDesc: imageB64 ? 'uploaded photo' : '' });
   const r = video.render(script, id, imageB64);
   return {
     id, lang, mode: r.mode, note: r.note,
