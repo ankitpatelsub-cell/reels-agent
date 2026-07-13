@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { buildReel, reelFromCar, onCarAdded } = require('./agent-core');
 const { limited } = require('./ratelimit');
+const dash = require('./dashauth');
 const PUBLIC = path.join(__dirname, 'public');
 const REELS = path.join(__dirname, 'reels');
 const MIME = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.json': 'application/json', '.mp4': 'video/mp4' };
@@ -23,12 +24,21 @@ const server = http.createServer(async (req, res) => {
   async function body() { let b = ''; for await (const c of req) b += c; try { return JSON.parse(b || '{}'); } catch { return {}; } }
   if (req.method === 'POST' && limited(req.socket.remoteAddress)) return send(res, 429, { error: 'rate limit' });
 
+  const authed = () => dash.checkToken(req.headers['x-auth-token'] || (req.headers['cookie'] || '').match(/dash=([^;]+)/)?.[1] || '');
+  if (req.method === 'POST' && url.pathname === '/api/dash-login') {
+    const b = await body();
+    if (dash.checkPass(b.password)) return send(res, 200, { token: dash.makeToken() });
+    return send(res, 401, { error: 'unauthorized' });
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/reel') {
+    if (!authed()) return send(res, 401, { error: 'unauthorized' });
     const b = await body();
     if (!b.brief && !b.subject && !b.image) return send(res, 400, { error: 'need brief / subject / image' });
     return send(res, 200, await buildReel({ brief: b.brief, subject: b.subject, lang: b.lang || 'en', imageB64: b.image }));
   }
   if (req.method === 'POST' && url.pathname === '/api/reel-from-car') {
+    if (!authed()) return send(res, 401, { error: 'unauthorized' });
     const b = await body();
     const r = await reelFromCar(b.carId, b.lang || 'en');
     return send(res, r.error ? 404 : 200, r);
@@ -52,6 +62,7 @@ const server = http.createServer(async (req, res) => {
   }
   // Pages
   let p = url.pathname === '/' ? '/index.html' : url.pathname;
+  if (p === '/index.html' && !authed()) return send(res, 200, dash.LOGIN_HTML, 'text/html');
   const fp = path.join(PUBLIC, p);
   if (fs.existsSync(fp) && fs.statSync(fp).isFile()) return send(res, 200, fs.readFileSync(fp), MIME[path.extname(fp)] || 'text/plain');
   return send(res, 404, { error: 'not found' });
