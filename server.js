@@ -53,6 +53,14 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && url.pathname === '/api/health') {
     return send(res, 200, { ok: true, mode: process.env.VIDEO_API_KEY ? 'provider' : 'preview', video: process.env.VIDEO_API_KEY ? 'ready' : 'needs key', script: process.env.XAI_API_KEY ? 'xai-grok' : 'template' });
   }
+  if (req.method === 'GET' && url.pathname === '/api/state') {
+    const fs = require('fs'); const n = fs.existsSync(REELS) ? fs.readdirSync(REELS).filter(f => f.endsWith('.mp4')).length : 0;
+    return send(res, 200, { reels: n, mode: process.env.VIDEO_API_KEY ? 'provider' : 'preview' });
+  }
+  if (req.method === 'GET' && url.pathname === '/api/overview') {
+    const fs = require('fs'); const n = fs.existsSync(REELS) ? fs.readdirSync(REELS).filter(f => f.endsWith('.mp4')).length : 0;
+    return send(res, 200, { reels: n, mode: process.env.VIDEO_API_KEY ? 'provider' : 'preview' });
+  }
 
   // Static: reels files
   if (url.pathname.startsWith('/reels/')) {
