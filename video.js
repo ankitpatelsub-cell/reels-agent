@@ -18,47 +18,35 @@ function saveImage(b64, id) {
 }
 
 const { gen } = require('./image');
-// Real provider: xAI Grok Imagine Video (api.x.ai). Uses XAI_API_KEY (not OpenRouter —
-// OpenRouter does NOT route xAI video models). Falls back to null -> preview on any error.
+// Real provider: xAI Grok Imagine Video via OpenRouter /v1/videos endpoint.
+// Uses OPENROUTER_API_KEY (the Hermes key). Falls back to null -> preview on any error.
 function renderWithProvider(script, imagePath) {
-  const key = process.env.XAI_API_KEY;
+  const key = process.env.OPENROUTER_API_KEY;
   if (!key) return null;
+  const prompt = (script.videoPrompt || script.hook || 'A cinematic promotional video').slice(0, 1000);
   try {
-    const https = require('https');
-    const prompt = (script.videoPrompt || script.hook || 'A cinematic promotional video').slice(0, 1000);
-    // xAI image-to-video: POST /v1/video/generations with model + input image
-    const body = JSON.stringify({
-      model: 'x-ai/grok-imagine-video',
-      input: imagePath ? [{ type: 'image', image: 'file://' + imagePath }] : undefined,
-      prompt,
-      n_seconds: 10,
-      resolution: '720p',
-      aspect_ratio: '9:16',
-    });
-    const buf = execFileSync('curl', [
-      '-sSL', '--max-time', '120',
-      '-X', 'POST', 'https://api.x.ai/v1/video/generations',
+    // Step 1: submit job
+    const sub = JSON.parse(execFileSync('curl', [
+      '-sSL', '--max-time', '60', '-X', 'POST', 'https://openrouter.ai/api/v1/videos',
       '-H', 'Content-Type: application/json',
       '-H', 'Authorization: Bearer ' + key,
-      '-d', body,
-    ], { encoding: 'utf8' });
-    const j = JSON.parse(buf);
-    // xAI returns a generations id -> poll /v1/video/generations/{id} until status=complete
-    const genId = j.id || (j.data && j.data.id);
-    if (!genId) return null;
-    const mp4 = path.join(OUT, `reel-${Date.now().toString().slice(-6)}.mp4`);
-    // poll up to ~110s
-    for (let i = 0; i < 22; i++) {
+      '-d', JSON.stringify({ model: 'x-ai/grok-imagine-video', prompt }),
+    ], { encoding: 'utf8', maxBuffer: 5 * 1024 * 1024 }));
+    if (!sub.id) return null;
+    const jobUrl = sub.polling_url || `https://openrouter.ai/api/v1/videos/${sub.id}`;
+    const mp4 = path.join(OUT, `reel-${sub.id.slice(-6)}.mp4`);
+    // Step 2: poll up to ~120s
+    for (let i = 0; i < 24; i++) {
       const st = JSON.parse(execFileSync('curl', [
-        '-sSL', '--max-time', '30',
+        '-sSL', '--max-time', '30', jobUrl,
         '-H', 'Authorization: Bearer ' + key,
-        `https://api.x.ai/v1/video/generations/${genId}`,
       ], { encoding: 'utf8' }));
-      const data = st.data || st;
-      if (data.status === 'complete' && data.video && data.video.url) {
-        execFileSync('curl', ['-sSL', '--max-time', '120', '-o', mp4, data.video.url]);
-        if (fs.existsSync(mp4)) return mp4;
+      if (st.status === 'completed' && st.unsigned_urls && st.unsigned_urls[0]) {
+        execFileSync('curl', ['-sSL', '--max-time', '120', '-o', mp4, st.unsigned_urls[0]]);
+        if (fs.existsSync(mp4) && fs.statSync(mp4).size > 1000) return mp4;
+        return null;
       }
+      if (st.status === 'failed') return null;
       require('child_process').execSync('sleep 5');
     }
     return null;
@@ -66,6 +54,21 @@ function renderWithProvider(script, imagePath) {
     console.log('[reels] provider render failed, using preview:', e.message.split('\n')[0]);
     return null;
   }
+}
+
+// Detect OpenRouter limit/credit errors so the UI can show a clear message.
+function providerBlocked() {
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!key) return false;
+  try {
+    const j = JSON.parse(execFileSync('curl', [
+      '-sSL', '--max-time', '20', 'https://openrouter.ai/api/v1/key',
+      '-H', 'Authorization: Bearer ' + key,
+    ], { encoding: 'utf8' }));
+    const d = j.data || {};
+    return (d.limit != null && d.limit_remaining != null && d.limit_remaining <= 0)
+      || (d.total_credits != null && d.total_usage != null && d.total_usage >= d.total_credits - 0.01);
+  } catch { return false; }
 }
 
 // 10s branded slate with hook text + optional AI poster background.
@@ -92,15 +95,20 @@ function renderPreview(script, id, poster) {
 }
 function render(script, id, imageB64) {
   const imagePath = saveImage(imageB64, id);
-  // 1) try real AI video (xAI) — needs funded xAI team
+  // 1) try real AI video via OpenRouter (x-ai/grok-imagine-video)
   const real = renderWithProvider(script, imagePath);
   if (real) return { mode: 'provider', file: real };
-  // 2) generate a real AI poster image (OpenRouter) for the preview
+  // 2) blocked? surface a clear message
+  const blocked = providerBlocked();
+  const note = blocked
+    ? 'OpenRouter credit limit reached. Add credits at openrouter.ai to generate real AI video.'
+    : 'Preview slate + AI poster. Add funded OpenRouter key for full video.';
+  // 3) generate a real AI poster image (OpenRouter) for the preview
   const poster = gen((script.videoPrompt || script.hook || 'cinematic promo') + ', poster', id);
   if (poster) console.log('[reels] AI poster generated:', poster);
-  // 3) branded preview slate (with poster if available)
+  // 4) branded preview slate (with poster if available)
   const prev = renderPreview(script, id, poster);
-  return { mode: 'preview', file: prev, poster: poster || null, note: 'Preview slate + AI poster. Add funded xAI key for full video.' };
+  return { mode: 'preview', file: prev, poster: poster || null, note };
 }
 
 module.exports = { render };
