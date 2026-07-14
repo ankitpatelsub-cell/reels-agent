@@ -17,6 +17,7 @@ function saveImage(b64, id) {
   try { fs.writeFileSync(fp, Buffer.from(raw, 'base64')); return fp; } catch { return null; }
 }
 
+const { gen } = require('./image');
 // Real provider: xAI Grok Imagine Video (api.x.ai). Uses XAI_API_KEY (not OpenRouter —
 // OpenRouter does NOT route xAI video models). Falls back to null -> preview on any error.
 function renderWithProvider(script, imagePath) {
@@ -67,27 +68,39 @@ function renderWithProvider(script, imagePath) {
   }
 }
 
-// 10s branded slate with hook text (no audio track -> avoids codec issues).
-function renderPreview(script, id) {
+// 10s branded slate with hook text + optional AI poster background.
+function renderPreview(script, id, poster) {
   const mp4 = path.join(OUT, `reel-${id}.mp4`);
   try {
-    execFileSync('ffmpeg', [
-      '-y', '-f', 'lavfi', '-i', 'color=c=0x0f1f33:s=1080x1920:d=10',
-      '-vf',
-      `drawtext=text='${esc(script.brand)}':fontcolor=white:fontsize=64:x=(w-tw)/2:y=820:box=1:boxcolor=0x1f5fae@0.7:boxborderw=20,` +
-      `drawtext=text='${esc(script.hook.slice(0, 46))}':fontcolor=white:fontsize=38:x=(w-tw)/2:y=1010:box=1:boxcolor=0x000000@0.5:boxborderw=12`,
-      '-t', '10', '-pix_fmt', 'yuv420p', mp4
-    ], { stdio: 'ignore' });
+    const args = ['-y','-f','lavfi','-i',`color=c=0x0f1f33:s=1080x1920:d=10`];
+    let vf;
+    if (poster && fs.existsSync(poster)) {
+      args.push('-i', poster, '-filter_complex',
+        `[1:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2[ov];` +
+        `[0:v][ov]overlay=(W-w)/2:(H-h)/2,` +
+        `drawtext=text='${esc(script.brand)}':fontcolor=white:fontsize=64:x=(w-tw)/2:y=820:box=1:boxcolor=0x1f5fae@0.7:boxborderw=20,` +
+        `drawtext=text='${esc((script.hook||'').slice(0,46))}':fontcolor=white:fontsize=38:x=(w-tw)/2:y=1010:box=1:boxcolor=0x000000@0.5:boxborderw=12`);
+    } else {
+      args.push('-vf',
+        `drawtext=text='${esc(script.brand)}':fontcolor=white:fontsize=64:x=(w-tw)/2:y=820:box=1:boxcolor=0x1f5fae@0.7:boxborderw=20,` +
+        `drawtext=text='${esc((script.hook||'').slice(0,46))}':fontcolor=white:fontsize=38:x=(w-tw)/2:y=1010:box=1:boxcolor=0x000000@0.5:boxborderw=12`);
+    }
+    args.push('-t','10','-pix_fmt','yuv420p', mp4);
+    execFileSync('ffmpeg', args, { stdio: 'ignore' });
     return mp4;
   } catch (e) { return null; }
 }
-
 function render(script, id, imageB64) {
   const imagePath = saveImage(imageB64, id);
+  // 1) try real AI video (xAI) — needs funded xAI team
   const real = renderWithProvider(script, imagePath);
   if (real) return { mode: 'provider', file: real };
-  const prev = renderPreview(script, id);
-  return { mode: 'preview', file: prev, note: 'Preview slate (no VIDEO_API_KEY set). Add key to render real video.' };
+  // 2) generate a real AI poster image (OpenRouter) for the preview
+  const poster = gen((script.videoPrompt || script.hook || 'cinematic promo') + ', poster', id);
+  if (poster) console.log('[reels] AI poster generated:', poster);
+  // 3) branded preview slate (with poster if available)
+  const prev = renderPreview(script, id, poster);
+  return { mode: 'preview', file: prev, poster: poster || null, note: 'Preview slate + AI poster. Add funded xAI key for full video.' };
 }
 
 module.exports = { render };
