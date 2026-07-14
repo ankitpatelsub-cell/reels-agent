@@ -51,7 +51,8 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, r);
   }
   if (req.method === 'GET' && url.pathname === '/api/health') {
-    return send(res, 200, { ok: true, mode: process.env.VIDEO_API_KEY ? 'provider' : 'preview', video: process.env.VIDEO_API_KEY ? 'ready' : 'needs key', script: process.env.XAI_API_KEY ? 'xai-grok' : 'template' });
+    const provider = !!process.env.OPENROUTER_API_KEY;
+    return send(res, 200, { ok: true, mode: provider ? 'provider' : 'preview', video: provider ? (process.env.OPENROUTER_LIMIT_OK ? 'ready' : 'credit-limit') : 'needs key', script: 'openrouter' });
   }
   if (req.method === 'GET' && url.pathname === '/api/state') {
     const fs = require('fs'); const n = fs.existsSync(REELS) ? fs.readdirSync(REELS).filter(f => f.endsWith('.mp4')).length : 0;
