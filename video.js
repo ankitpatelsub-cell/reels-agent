@@ -17,11 +17,54 @@ function saveImage(b64, id) {
   try { fs.writeFileSync(fp, Buffer.from(raw, 'base64')); return fp; } catch { return null; }
 }
 
-// Real provider hook (plug when key arrives). Currently returns null -> preview.
+// Real provider: xAI Grok Imagine Video (api.x.ai). Uses XAI_API_KEY (not OpenRouter —
+// OpenRouter does NOT route xAI video models). Falls back to null -> preview on any error.
 function renderWithProvider(script, imagePath) {
-  if (!process.env.VIDEO_API_KEY) return null;
-  // TODO: dispatch to Luma/Hailuo/Kling/xAI-video with process.env.VIDEO_API_KEY + script.videoPrompt + imagePath
-  return null;
+  const key = process.env.XAI_API_KEY;
+  if (!key) return null;
+  try {
+    const https = require('https');
+    const prompt = (script.videoPrompt || script.hook || 'A cinematic promotional video').slice(0, 1000);
+    // xAI image-to-video: POST /v1/video/generations with model + input image
+    const body = JSON.stringify({
+      model: 'x-ai/grok-imagine-video',
+      input: imagePath ? [{ type: 'image', image: 'file://' + imagePath }] : undefined,
+      prompt,
+      n_seconds: 10,
+      resolution: '720p',
+      aspect_ratio: '9:16',
+    });
+    const buf = execFileSync('curl', [
+      '-sSL', '--max-time', '120',
+      '-X', 'POST', 'https://api.x.ai/v1/video/generations',
+      '-H', 'Content-Type: application/json',
+      '-H', 'Authorization: Bearer ' + key,
+      '-d', body,
+    ], { encoding: 'utf8' });
+    const j = JSON.parse(buf);
+    // xAI returns a generations id -> poll /v1/video/generations/{id} until status=complete
+    const genId = j.id || (j.data && j.data.id);
+    if (!genId) return null;
+    const mp4 = path.join(OUT, `reel-${Date.now().toString().slice(-6)}.mp4`);
+    // poll up to ~110s
+    for (let i = 0; i < 22; i++) {
+      const st = JSON.parse(execFileSync('curl', [
+        '-sSL', '--max-time', '30',
+        '-H', 'Authorization: Bearer ' + key,
+        `https://api.x.ai/v1/video/generations/${genId}`,
+      ], { encoding: 'utf8' }));
+      const data = st.data || st;
+      if (data.status === 'complete' && data.video && data.video.url) {
+        execFileSync('curl', ['-sSL', '--max-time', '120', '-o', mp4, data.video.url]);
+        if (fs.existsSync(mp4)) return mp4;
+      }
+      require('child_process').execSync('sleep 5');
+    }
+    return null;
+  } catch (e) {
+    console.log('[reels] provider render failed, using preview:', e.message.split('\n')[0]);
+    return null;
+  }
 }
 
 // 10s branded slate with hook text (no audio track -> avoids codec issues).
