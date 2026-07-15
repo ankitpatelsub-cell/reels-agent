@@ -56,11 +56,11 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname === '/api/state') {
     const fs = require('fs'); const n = fs.existsSync(REELS) ? fs.readdirSync(REELS).filter(f => f.endsWith('.mp4')).length : 0;
-    return send(res, 200, { reels: n, mode: process.env.VIDEO_API_KEY ? 'provider' : 'preview' });
+    return send(res, 200, { reels: n, mode: process.env.OPENROUTER_API_KEY ? 'provider' : 'preview' });
   }
   if (req.method === 'GET' && url.pathname === '/api/overview') {
     const fs = require('fs'); const n = fs.existsSync(REELS) ? fs.readdirSync(REELS).filter(f => f.endsWith('.mp4')).length : 0;
-    return send(res, 200, { reels: n, mode: process.env.VIDEO_API_KEY ? 'provider' : 'preview' });
+    return send(res, 200, { reels: n, mode: process.env.OPENROUTER_API_KEY ? 'provider' : 'preview' });
   }
 
   // Static: reels files
